@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.ensemble import IsolationForest
 
 def initial_analysi(data_calender,
                     data_inventory,
@@ -106,10 +107,15 @@ def impute_function(data):
     print("This is the data to impute:\n", data)
     return data_filled
 
+
+def drop_outliers(data):
+    print("This is the data to drop outliers:\n", data)
+    return data_dropped
+
 def cleaing_data(data):
     '''
 
-    
+
 
     '''
     # Drop duplicates
@@ -124,10 +130,12 @@ def cleaing_data(data):
     print("This is the columns to impute:\n", cols_to_impute)
 
     # Impute missing values using "impute_function()" function
-    data_cleaned = data.copy()
+    data_temp = data.copy()
     for col in cols_to_impute:
-        data_cleaned[col] = impute_function(data_cleaned[col])
+        data_temp[col] = impute_function(data_temp[col])
     
+    data_cleaned = drop_outliers(data_temp)
+
     return data_cleaned
 
 def EDA(data):
