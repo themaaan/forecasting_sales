@@ -1,7 +1,10 @@
+from pickle import TRUE
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import IsolationForest
+from sklearn.impute import KNNImputer
+
 
 def initial_analysi(data_calender,
                     data_inventory,
@@ -103,13 +106,15 @@ def initial_analysi(data_calender,
 
     return data
 
-def impute_function(data):
-    print("This is the data to impute:\n", data)
+def impute_KNN(data):
+    imputer = KNNImputer(n_neighbors=10)
+    data_filled = imputer.fit_transform(data)
     return data_filled
 
 
-def drop_outliers(data):
+def outlier_detection(data):
     print("This is the data to drop outliers:\n", data)
+    data_dropped == True
     return data_dropped
 
 def cleaing_data(data):
@@ -126,15 +131,23 @@ def cleaing_data(data):
     print("This is the missing values of the merged data:\n", missing_values)
     
     # Find columns with less than 5% missing values to impute
-    cols_to_impute = data.columns[missing_values < 5].tolist()
+    cols_to_impute = data.columns[missing_values >= 5].tolist().remove('holiday_name') 
     print("This is the columns to impute:\n", cols_to_impute)
 
     # Impute missing values using "impute_function()" function
     data_temp = data.copy()
-    for col in cols_to_impute:
-        data_temp[col] = impute_function(data_temp[col])
+    if cols_to_impute is not None:
+        for col in cols_to_impute:
+            data_temp[col] = impute_KNN(data_temp[col])
+    else:
+        print("No columns to impute")
     
-    data_cleaned = drop_outliers(data_temp)
+    # There are a few sales that are missing. Fill wtih 0:
+    data_temp['sales'] = data_temp['sales'].fillna(0)
+    data_temp['total_orders'] = data_temp['total_orders'].fillna(0)
+
+
+    data_cleaned = outlier_detection(data_temp)
 
     return data_cleaned
 
@@ -168,7 +181,7 @@ def main():
     data = initial_analysi(data_calender, 
                            data_inventory, 
                            data_sales, 
-                           print_analysis = False)
+                           print_analysis = False) 
     
 
     # -----------------------------------------
