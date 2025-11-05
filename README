@@ -1,0 +1,3 @@
+# Luo vnev: python3 -m venv vnev
+# Laita venv päälle: source venv/bin/activate
+# Aja kirjastot: pip install -r requirements.txt

@@ -1,10 +1,12 @@
-from pickle import TRUE
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import IsolationForest
 from sklearn.impute import KNNImputer
-
+import numpy as np
+from tqdm import tqdm
+from tqdm_joblib import tqdm_joblib
+from matplotlib.ticker import FuncFormatter
 
 def initial_analysi(data_calender,
                     data_inventory,
@@ -101,9 +103,6 @@ def initial_analysi(data_calender,
             if orig_type != new_type:
                 print(f"Column '{col}': {orig_type} -> {new_type}")
 
-    # Duplicates
-    print("This is the duplicates of the merged data:\n",data.duplicated().sum())
-
     return data
 
 def impute_KNN(data):
@@ -111,11 +110,36 @@ def impute_KNN(data):
     data_filled = imputer.fit_transform(data)
     return data_filled
 
-
 def outlier_detection(data):
-    print("This is the data to drop outliers:\n", data)
-    data_dropped == True
-    return data_dropped
+    # Isolation Forest
+    # Detect outliers on sales within each warehouse group using IsolationForest
+    data['outlier_score'] = np.nan
+    data['outlier'] = np.nan
+    
+    # Apply outlier detection only to non-holiday data
+    non_holiday_data = data[data['holiday'] == False]
+    # IsolationForest outlier detection (tqdm_joblib-loading bar removed, as it doesn't work here)
+    for warehouse, group in non_holiday_data.groupby('warehouse'):
+        # Reshape for scikit-learn (IsolationForest expects 2D arrays)
+        sales_values = group['sales'].values.reshape(-1, 1)
+        model_IsolationForest = IsolationForest(n_estimators=20, contamination=0.0075, random_state=42)
+        model_IsolationForest.fit(sales_values)
+        outlier_scores = model_IsolationForest.decision_function(sales_values)
+        outliers = model_IsolationForest.predict(sales_values)
+        # Map results back to the original dataframe
+        data.loc[group.index, 'outlier_score'] = outlier_scores
+        data.loc[group.index, 'outlier'] = outliers
+    
+    # Mark all holiday data as inliers (not outliers)
+    holiday_indices = data[data['holiday'] == True].index
+    data.loc[holiday_indices, 'outlier'] = 1  # 1 means inlier
+    data.loc[holiday_indices, 'outlier_score'] = 0  # Set a default score for holidays
+
+    # Convert outlier column to boolean: -1 means outlier, 1 means inlier
+    data['outlier'] = data['outlier'] == -1
+    data_outliers = pd.DataFrame(data[data['outlier'] == True])
+    data = pd.DataFrame(data[data['outlier'] == False])
+    return data, data_outliers
 
 def cleaing_data(data):
     '''
@@ -147,21 +171,61 @@ def cleaing_data(data):
     data_temp['total_orders'] = data_temp['total_orders'].fillna(0)
 
 
-    data_cleaned = outlier_detection(data_temp)
+    data_cleaned = data_temp #outlier_detection(data_temp)
 
     return data_cleaned
 
-def EDA(data):
+def EDA(data, outlier_detection = False):
 
+    data['date'].max() # 2024-06-02 00:00:00
+    data['date'].min() # 2020-08-01 00:00:00
+    # Difference is 1402 days.
+    data['date'].unique() # length is 1402 days, correct!
 
-    # histogram of the data
-    data.hist(bins=100) # Nothing to see here
-
-    # correlation matrix
-    corr = data.corr()
-    sns.heatmap(corr, annot=True, cmap='coolwarm')
+  
+    numeric_data = data.select_dtypes(include=[np.number])
+    plt.figure(figsize=(8,6))
+    sns.heatmap(numeric_data.corr(), annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5)
+    plt.title("Correlation Heatmap before outlier detection")
     plt.show()
 
+    if outlier_detection:
+        
+        data, data_outliers = outlier_detection(data)
+
+        # print("These are the outliers:\n", data_outliers)          
+        numeric_data = data.select_dtypes(include=[np.number])
+        plt.figure(figsize=(8,6))
+        sns.heatmap(numeric_data.corr(), annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5)
+        plt.title("Correlation Heatmap after outlier detection")
+        plt.show()
+
+
+ 
+    # aggregate sales by week and / or month for each warehouse
+    #data['week'] = data['date'].dt.week
+    data['year_month'] = data['date'].dt.strftime('%Y-%m')
+    #data_weekly_sales = data.groupby(['warehouse', 'week']).agg({'sales': 'sum'}).reset_index()
+    data_monthly_sales = data.groupby(['warehouse', 'year_month']).\
+                              agg({'sales': 'sum'}).reset_index().\
+                              rename(columns={'sales': 'monthly_sales'})
+    data = pd.merge(data, data_monthly_sales, how = "left", on = ["warehouse", "year_month"])
+    
+    # plotting total sales over time for each warehouse.
+    # Plotting both sales and monthly_sales curves for all warehouses in different colors without a loop
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(data=data[data['year_month'] != data.groupby('warehouse')['year_month'].transform('max')], x='date', y='monthly_sales', hue='warehouse', legend='brief', linestyle='-')
+    plt.xlabel("Date")
+    plt.ylabel("Sales")
+    plt.title("Monthly Sales Over Time by Warehouse")
+    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{int(x):,}'.replace(',', ' ')))
+    plt.tight_layout()
+    plt.show()
+
+    
+
+
+    return data
 
 def main():
     # -----------------------------------------
@@ -194,7 +258,7 @@ def main():
     # visualizations
     # data correlation
     # data distribution
-    EDA(data)
+    data = EDA(data)
     
     # -----------------------------------------
     # ----------------- Feature Engineering -----------------
@@ -202,6 +266,7 @@ def main():
     # create new features
     # transform features
     # encode categorical variables
+    
     
     # -----------------------------------------
     # ----------------- Feature Selection -----------------
@@ -223,7 +288,7 @@ def main():
     # validation split (if needed)
     # time series split (if applicable)
     
-    return True
+    return data
 
 if __name__ == "__main__":
     main()
